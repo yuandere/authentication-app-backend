@@ -36,14 +36,33 @@ const register = async(req, res, next) => {
   }
 }
 
-const login = (req, res) => {
-
-  main()
-    .then(console.log)
-    .catch(console.error)
-    .finally(() => client.close());
-
-  res.status(200).send('login successful')
+const login = async(req, res, next) => {
+  const { email, password } = req.body;
+  await client.connect();
+  const db = client.db(dbName);
+  const users = db.collection('users');
+  try {
+    const findResult = await users.find({ email: email, password: password }).toArray();
+    if (findResult[0]) {
+      const userResults = {
+        name: findResult[0].name,
+        bio: findResult[0].bio,
+        phone: findResult[0].phone,
+        email: findResult[0].email,
+        password: findResult[0].password,
+        picture_url: findResult[0].picture_url,
+      }
+      res.json(userResults);
+    } else {
+      res.status(200).send('incorrect email/password combination')
+    }
+  }
+  catch (err) {
+    console.log('error occurred:', err);
+  }
+  finally {
+    client.close()
+  }
 }
 
 module.exports = {

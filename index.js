@@ -13,7 +13,7 @@ app.use(express.json());
 app.use(cors());
 
 app.post('/register', router.register);
-app.get('/login', router.login);
+app.post('/login', router.login);
 
 
 app.use((err, req, res, next) => {
