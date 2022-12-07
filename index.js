@@ -14,7 +14,7 @@ app.use(cors());
 
 app.post('/register', router.register);
 app.post('/login', router.login);
-
+app.post('/edit-profile', router.editProfile);
 
 app.use((err, req, res, next) => {
   console.error(err);
