@@ -1,33 +1,42 @@
-const axios = require('axios');
+const path = require('path')
+const fs = require('fs')
+// const http = require('http')
+// const url = require('url')
+const axios = require('axios')
+const { google } = require('googleapis')
+const people = google.people('v1')
 const { MongoClient } = require('mongodb')
 
-
-const url = 'mongodb://localhost:27017';
-const client = new MongoClient(url);
+const db_url = 'mongodb://localhost:27017';
+const client = new MongoClient(db_url);
 const dbName = 'authyDB';
 const db = client.db(dbName);
 const users = db.collection('users');
+const REDIRECT_URI = 'http://localhost:5173';
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const GITHUB_URL = 'https://github.com/login/oauth/access_token';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
-// const registerOauthGeneric = async (req, res, userObject) => {
-//   await client.connect();
-//   const db = client.db(dbName);
-//   const users = db.collection('users');
-//   try {
-//     await users.insertOne(userObject);
-//     res.redirect('http://localhost:5173')
-//   }
-//   catch (err) {
-//     console.log('error occurred:', err);
-//     res.status(500).send('an error has occurred');
-//   }
-//   finally {
-//     client.close()
-//   }
-// }
+const serviceKey = path.join(__dirname, './config/keys.json');
+if (!fs.existsSync(serviceKey)) {
+  const serviceKeyCut = require('./config/keyscut.json');
+  const serviceKeyJoined = {
+    ...serviceKeyCut,
+    "private_key_id": process.env.GOOGLE_PRIV_ID,
+    "private_key": process.env.GOOGLE_PRIV_KEY.replace(/\\n/gm, '\n')
+  };
+  fs.writeFileSync(serviceKey, JSON.stringify(serviceKeyJoined));
+}
+
+const googleOauth2Client = new google.auth.OAuth2(
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET,
+  REDIRECT_URI
+);
+google.options({ auth: googleOauth2Client });
 
 const register = async (req, res, next) => {
   const { email, password } = req.body;
@@ -43,7 +52,7 @@ const register = async (req, res, next) => {
     }
   }
   catch (err) {
-    console.log('error occurred:', err);
+    console.error(err);
     res.status(500).send('an error has occurred');
   }
   finally {
@@ -71,7 +80,7 @@ const login = async (req, res, next) => {
     }
   }
   catch (err) {
-    console.log('error occurred:', err);
+    console.error(err);
     res.status(500).send('an error has occurred');
   }
   finally {
@@ -101,7 +110,7 @@ const editProfile = async (req, res, next) => {
     }
   }
   catch (err) {
-    console.log('error occurred:', err);
+    console.error(err);
     res.status(500).send('an error has occurred');
   }
   finally {
@@ -127,48 +136,92 @@ const oauthGithub = async (req, res, next) => {
       return token
     })
     .catch((err) => {
-      console.log('error:', err);
+      console.error(err);
       res.status(500).send('an error has occurred');
     })
   // console.log('token ready:', access_token);
-  const user_data = await axios.get('https://api.github.com/user', {
+  const githubUser = await axios.get('https://api.github.com/user', {
     headers: {
       Authorization: `Bearer ${access_token}`,
     }
   })
     .then((response) => {
       // console.log(response.data)
-      const newGithubUser = {
+      const ghubUser = {
         oauth_id: `github=${response.data.id}`,
         email: '',
         password: '',
+        phone: '',
         bio: response.data.bio,
         name: response.data.name,
-        phone: '',
         picture_url: response.data.avatar_url,
       }
-      return newGithubUser
+      return ghubUser
     })
     .catch((err) => {
-      console.log('error:', err);
+      console.error(err);
       res.status(500).send('an error has occurred');
     })
-  // console.log('github user data:', user_data);
+  // console.log('github user data:', githubUser);
   try {
     await client.connect();
-    const findResult = await users.find({ oauth_id: user_data.oauth_id }).toArray();
+    const findResult = await users.find({ oauth_id: githubUser.oauth_id }).toArray();
     if (!findResult[0]) {
-      await users.insertOne(user_data);
-      res.json(user_data);
+      await users.insertOne(githubUser);
+      res.json(githubUser);
     }
     else {
       res.json(findResult[0]);
     }
   }
   catch (err) {
-    console.log('error occurred:', err);
+    console.error(err);
     res.status(500).send('an error has occurred');
   }
+  finally {
+    client.close()
+  }
+}
+
+const oauthGoogle = async (req, res) => {
+
+  const { code } = req.body;
+  let { tokens } = await googleOauth2Client.getToken(code);
+  googleOauth2Client.setCredentials(tokens);
+  const userDataRaw = await people.people.get({
+    resourceName: 'people/me',
+    personFields: 'names,biographies,photos',
+  });
+  const googleId = userDataRaw.data.resourceName;
+  const googleUser = {
+    oauth_id: `google=${googleId.slice(googleId.indexOf('/') + 1)}`,
+    email: '',
+    password: '',
+    phone: '',
+    ...(userDataRaw.data.biographies ? { bio: userDataRaw.data.biographies[0].value } : { bio: '' }),
+    ...(userDataRaw.data.names ? { name: userDataRaw.data.names[0].displayName } : { name: '' }),
+    ...(userDataRaw.data.photos ? { picture_url: userDataRaw.data.photos[0].url } : { picture_url: '' }),
+  }
+  // const reponseObj = {
+  //   tokens: tokens,
+  //   userData: googleUser
+  // };
+  try {
+    await client.connect();
+    const findResult = await users.find({ oauth_id: googleUser.oauth_id }).toArray();
+    if (!findResult[0]) {
+      await users.insertOne(googleUser);
+      res.json(googleUser);
+    }
+    else {
+      res.json(findResult[0]);
+    }
+
+  } 
+  catch (err) {
+    console.error(err)
+    res.status(400).send(err)
+  } 
   finally {
     client.close()
   }
@@ -179,4 +232,5 @@ module.exports = {
   login,
   editProfile,
   oauthGithub,
+  oauthGoogle
 }
