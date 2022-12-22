@@ -12,13 +12,15 @@ const client = new MongoClient(db_url);
 const dbName = 'authyDB';
 const db = client.db(dbName);
 const users = db.collection('users');
-const REDIRECT_URI = 'http://localhost:5173';
+const REDIRECT_URI = 'http://localhost:5173/';
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
-const GITHUB_URL = 'https://github.com/login/oauth/access_token';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const FACEBOOK_CLIENT_ID = process.env.FACEBOOK_CLIENT_ID;
+const FACEBOOK_CLIENT_SECRET = process.env.FACEBOOK_CLIENT_SECRET;
+
 
 const serviceKey = path.join(__dirname, './config/keys.json');
 if (!fs.existsSync(serviceKey)) {
@@ -38,7 +40,7 @@ const googleOauth2Client = new google.auth.OAuth2(
 );
 google.options({ auth: googleOauth2Client });
 
-const register = async (req, res, next) => {
+const register = async (req, res) => {
   const { email, password } = req.body;
   await client.connect();
   try {
@@ -60,7 +62,7 @@ const register = async (req, res, next) => {
   }
 }
 
-const login = async (req, res, next) => {
+const login = async (req, res) => {
   const { email, password } = req.body;
   await client.connect();
   try {
@@ -88,7 +90,7 @@ const login = async (req, res, next) => {
   }
 }
 
-const editProfile = async (req, res, next) => {
+const editProfile = async (req, res) => {
   const { oauth_id, curr_email, name, bio, phone, email, password, picture_url } = req.body;
   await client.connect();
   try {
@@ -118,8 +120,8 @@ const editProfile = async (req, res, next) => {
   }
 }
 
-const oauthGithub = async (req, res, next) => {
-  const access_token = await axios.post(`${GITHUB_URL}?client_id=${GITHUB_CLIENT_ID}&client_secret=${GITHUB_CLIENT_SECRET}&code=${req.query.code}`,
+const oauthGithub = async (req, res) => {
+  const access_token = await axios.post(`https://github.com/login/oauth/access_token?client_id=${GITHUB_CLIENT_ID}&client_secret=${GITHUB_CLIENT_SECRET}&code=${req.query.code}`,
     {
       headers: {
         Accept: 'application/json'
@@ -184,7 +186,6 @@ const oauthGithub = async (req, res, next) => {
 }
 
 const oauthGoogle = async (req, res) => {
-
   const { code } = req.body;
   let { tokens } = await googleOauth2Client.getToken(code);
   googleOauth2Client.setCredentials(tokens);
@@ -217,11 +218,71 @@ const oauthGoogle = async (req, res) => {
       res.json(findResult[0]);
     }
 
-  } 
+  }
   catch (err) {
     console.error(err)
     res.status(400).send(err)
-  } 
+  }
+  finally {
+    client.close()
+  }
+}
+
+const oauthFacebook = async (req, res) => {
+  const access_token = await axios.get
+    (`https://graph.facebook.com/v15.0/oauth/access_token?client_id=${FACEBOOK_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&client_secret=${FACEBOOK_CLIENT_SECRET}&code=${req.query.code}`)
+    .then((response) => {
+      return response.data.access_token
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).send('an error has occurred');
+    })
+  console.log('token ready:', access_token);
+  const facebookId = await axios.get
+    (`http://graph.facebook.com/debug_token?input_token=${access_token}&access_token=${FACEBOOK_CLIENT_ID}|${FACEBOOK_CLIENT_SECRET}`)
+    .then((response) => {
+      return response.data.data.user_id
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).send('an error has occurred');
+    })
+  console.log('fb ID found:', facebookId)
+  const facebookUser = await axios.get
+    (`http://graph.facebook.com/v15.0/${facebookId}?fields=name,picture&access_token=${access_token}`)
+    .then((response) => {
+      const fbUser = {
+        oauth_id: `facebook=${facebookId}`,
+        email: '',
+        password: '',
+        phone: '',
+        bio: '',
+        ...(response.data.name ? { name: response.data.name } : { name: '' }),
+        ...(response.data.picture ? { picture_url: response.data.picture.data.url } : { picture_url: '' }),
+      }
+      return fbUser
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).send('an error has occurred');
+    })
+  console.log('facebook user:', facebookUser)
+  try {
+    await client.connect();
+    const findResult = await users.find({ oauth_id: facebookUser.oauth_id }).toArray();
+    if (!findResult[0]) {
+      await users.insertOne(facebookUser);
+      res.json(facebookUser);
+    }
+    else {
+      res.json(findResult[0]);
+    }
+  }
+  catch (err) {
+    console.error(err);
+    res.status(500).send('an error has occurred');
+  }
   finally {
     client.close()
   }
@@ -232,5 +293,6 @@ module.exports = {
   login,
   editProfile,
   oauthGithub,
-  oauthGoogle
+  oauthGoogle,
+  oauthFacebook
 }

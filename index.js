@@ -19,6 +19,7 @@ app.post('/edit-profile', router.editProfile);
 
 app.get('/oauth/github', router.oauthGithub);
 app.post('/oauth/google', router.oauthGoogle);
+app.get('/oauth/facebook', router.oauthFacebook);
 
 app.use((err, req, res, next) => {
   console.error(err);
