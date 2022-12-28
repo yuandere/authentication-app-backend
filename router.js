@@ -3,16 +3,19 @@ const fs = require('fs')
 // const http = require('http')
 // const url = require('url')
 const axios = require('axios')
+const qs = require('qs')
 const { google } = require('googleapis')
 const people = google.people('v1')
 const { MongoClient } = require('mongodb')
+const { application, urlencoded } = require('express')
 
 const db_url = 'mongodb://localhost:27017';
 const client = new MongoClient(db_url);
 const dbName = 'authyDB';
 const db = client.db(dbName);
 const users = db.collection('users');
-const REDIRECT_URI = 'http://localhost:5173/';
+const REDIRECT_URI = 'http://localhost:5173';
+const REDIRECT_URL_NGROK = 'https://eb6a-169-150-203-245.jp.ngrok.io/';
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
@@ -20,7 +23,9 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const FACEBOOK_CLIENT_ID = process.env.FACEBOOK_CLIENT_ID;
 const FACEBOOK_CLIENT_SECRET = process.env.FACEBOOK_CLIENT_SECRET;
-
+const TWITTER_CLIENT_ID = process.env.TWITTER_CLIENT_ID;
+const TWITTER_CLIENT_SECRET = process.env.TWITTER_CLIENT_SECRET;
+const TWITTER_BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN;
 
 const serviceKey = path.join(__dirname, './config/keys.json');
 if (!fs.existsSync(serviceKey)) {
@@ -130,7 +135,7 @@ const oauthGithub = async (req, res) => {
   )
     .then((response) => {
       if (typeof response.data != 'string') {
-        throw 'github actually returned a json format, update ur code'
+        throw `i realized axios' alias method doesn't set request headers properly but this works fine too`
       }
       const token = response.data.slice(
         response.data.indexOf('=') + 1, response.data.indexOf('&')
@@ -230,7 +235,7 @@ const oauthGoogle = async (req, res) => {
 
 const oauthFacebook = async (req, res) => {
   const access_token = await axios.get
-    (`https://graph.facebook.com/v15.0/oauth/access_token?client_id=${FACEBOOK_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&client_secret=${FACEBOOK_CLIENT_SECRET}&code=${req.query.code}`)
+    (`https://graph.facebook.com/v15.0/oauth/access_token?client_id=${FACEBOOK_CLIENT_ID}&redirect_uri=${REDIRECT_URI + '/'}&client_secret=${FACEBOOK_CLIENT_SECRET}&code=${req.query.code}`)
     .then((response) => {
       return response.data.access_token
     })
@@ -238,7 +243,7 @@ const oauthFacebook = async (req, res) => {
       console.error(err);
       res.status(500).send('an error has occurred');
     })
-  console.log('token ready:', access_token);
+  // console.log('token ready:', access_token);
   const facebookId = await axios.get
     (`http://graph.facebook.com/debug_token?input_token=${access_token}&access_token=${FACEBOOK_CLIENT_ID}|${FACEBOOK_CLIENT_SECRET}`)
     .then((response) => {
@@ -248,7 +253,7 @@ const oauthFacebook = async (req, res) => {
       console.error(err);
       res.status(500).send('an error has occurred');
     })
-  console.log('fb ID found:', facebookId)
+  // console.log('fb ID found:', facebookId);
   const facebookUser = await axios.get
     (`http://graph.facebook.com/v15.0/${facebookId}?fields=name,picture&access_token=${access_token}`)
     .then((response) => {
@@ -267,7 +272,7 @@ const oauthFacebook = async (req, res) => {
       console.error(err);
       res.status(500).send('an error has occurred');
     })
-  console.log('facebook user:', facebookUser)
+  // console.log('facebook user:', facebookUser)
   try {
     await client.connect();
     const findResult = await users.find({ oauth_id: facebookUser.oauth_id }).toArray();
@@ -288,11 +293,82 @@ const oauthFacebook = async (req, res) => {
   }
 }
 
+const oauthTwitter = async (req, res) => {
+  const authorization_enc = Buffer.from(`${TWITTER_CLIENT_ID}:${TWITTER_CLIENT_SECRET}`, 'utf8').toString('base64');
+  const access_token = await axios({
+    method: 'post',
+    url: `https://api.twitter.com/2/oauth2/token`,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${authorization_enc}`
+    },
+    data: qs.stringify({
+      code: req.query.code,
+      grant_type: 'authorization_code',
+      redirect_uri: REDIRECT_URL_NGROK,
+      code_verifier: req.query.verifier
+    })
+  })
+    .then((response) => {
+      console.log(response.data)
+      return response.data.access_token
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).send('an error has occurred');
+    })
+  console.log('token ready:', access_token);
+
+  const twitterUser = await axios({
+    method: 'get',
+    url: `https://api.twitter.com/2/users/me?user.fields=profile_image_url%2Cdescription`,
+    headers: {
+      Authorization: `Bearer ${access_token}`,
+    }
+  })
+    .then((response) => {
+      console.log(response.data)
+      const twitUser = {
+        oauth_id: `twitter=${response.data.data.id}`,
+        email: '',
+        password: '',
+        phone: '',
+        bio: response.data.data.description,
+        name: response.data.data.name,
+        picture_url: response.data.data.profile_image_url,
+      }
+      return twitUser
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).send('an error has occurred');
+    })
+    try {
+      await client.connect();
+      const findResult = await users.find({ oauth_id: twitterUser.oauth_id }).toArray();
+      if (!findResult[0]) {
+        await users.insertOne(twitterUser);
+        res.json(twitterUser);
+      }
+      else {
+        res.json(findResult[0]);
+      }
+    }
+    catch (err) {
+      console.error(err);
+      res.status(500).send('an error has occurred');
+    }
+    finally {
+      client.close()
+    }
+}
+
 module.exports = {
   register,
   login,
   editProfile,
   oauthGithub,
   oauthGoogle,
-  oauthFacebook
+  oauthFacebook,
+  oauthTwitter
 }
