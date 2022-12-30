@@ -1,13 +1,10 @@
 const path = require('path')
 const fs = require('fs')
-// const http = require('http')
-// const url = require('url')
 const axios = require('axios')
 const qs = require('qs')
 const { google } = require('googleapis')
 const people = google.people('v1')
 const { MongoClient } = require('mongodb')
-const { application, urlencoded } = require('express')
 
 const db_url = 'mongodb://localhost:27017';
 const client = new MongoClient(db_url);
@@ -15,7 +12,8 @@ const dbName = 'authyDB';
 const db = client.db(dbName);
 const users = db.collection('users');
 const REDIRECT_URI = 'http://localhost:5173';
-const REDIRECT_URL_NGROK = 'https://eb6a-169-150-203-245.jp.ngrok.io/';
+
+const REDIRECT_URL_NGROK = 'https://3206-104-59-98-29.ngrok.io';
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
@@ -25,7 +23,6 @@ const FACEBOOK_CLIENT_ID = process.env.FACEBOOK_CLIENT_ID;
 const FACEBOOK_CLIENT_SECRET = process.env.FACEBOOK_CLIENT_SECRET;
 const TWITTER_CLIENT_ID = process.env.TWITTER_CLIENT_ID;
 const TWITTER_CLIENT_SECRET = process.env.TWITTER_CLIENT_SECRET;
-const TWITTER_BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN;
 
 const serviceKey = path.join(__dirname, './config/keys.json');
 if (!fs.existsSync(serviceKey)) {
@@ -144,7 +141,7 @@ const oauthGithub = async (req, res) => {
     })
     .catch((err) => {
       console.error(err);
-      res.status(500).send('an error has occurred');
+      res.status(500).send('github token request error');
     })
   // console.log('token ready:', access_token);
   const githubUser = await axios.get('https://api.github.com/user', {
@@ -167,7 +164,7 @@ const oauthGithub = async (req, res) => {
     })
     .catch((err) => {
       console.error(err);
-      res.status(500).send('an error has occurred');
+      res.status(500).send('github user info request error');
     })
   // console.log('github user data:', githubUser);
   try {
@@ -183,7 +180,7 @@ const oauthGithub = async (req, res) => {
   }
   catch (err) {
     console.error(err);
-    res.status(500).send('an error has occurred');
+    res.status(500).send('github route database error');
   }
   finally {
     client.close()
@@ -191,7 +188,7 @@ const oauthGithub = async (req, res) => {
 }
 
 const oauthGoogle = async (req, res) => {
-  const { code } = req.body;
+  const code = req.query.code;
   let { tokens } = await googleOauth2Client.getToken(code);
   googleOauth2Client.setCredentials(tokens);
   const userDataRaw = await people.people.get({
@@ -222,11 +219,10 @@ const oauthGoogle = async (req, res) => {
     else {
       res.json(findResult[0]);
     }
-
   }
   catch (err) {
     console.error(err)
-    res.status(400).send(err)
+    res.status(400).send('google route database error')
   }
   finally {
     client.close()
@@ -241,7 +237,7 @@ const oauthFacebook = async (req, res) => {
     })
     .catch((err) => {
       console.error(err);
-      res.status(500).send('an error has occurred');
+      res.status(500).send('fb token request error');
     })
   // console.log('token ready:', access_token);
   const facebookId = await axios.get
@@ -251,7 +247,7 @@ const oauthFacebook = async (req, res) => {
     })
     .catch((err) => {
       console.error(err);
-      res.status(500).send('an error has occurred');
+      res.status(500).send('fb user id request error');
     })
   // console.log('fb ID found:', facebookId);
   const facebookUser = await axios.get
@@ -270,7 +266,7 @@ const oauthFacebook = async (req, res) => {
     })
     .catch((err) => {
       console.error(err);
-      res.status(500).send('an error has occurred');
+      res.status(500).send('fb user info request error');
     })
   // console.log('facebook user:', facebookUser)
   try {
@@ -286,7 +282,7 @@ const oauthFacebook = async (req, res) => {
   }
   catch (err) {
     console.error(err);
-    res.status(500).send('an error has occurred');
+    res.status(500).send('fb route database error');
   }
   finally {
     client.close()
@@ -310,15 +306,13 @@ const oauthTwitter = async (req, res) => {
     })
   })
     .then((response) => {
-      console.log(response.data)
       return response.data.access_token
     })
     .catch((err) => {
       console.error(err);
-      res.status(500).send('an error has occurred');
+      res.status(500).send('twitter token request error');
     })
-  console.log('token ready:', access_token);
-
+  // console.log('token ready:', access_token);
   const twitterUser = await axios({
     method: 'get',
     url: `https://api.twitter.com/2/users/me?user.fields=profile_image_url%2Cdescription`,
@@ -327,7 +321,6 @@ const oauthTwitter = async (req, res) => {
     }
   })
     .then((response) => {
-      console.log(response.data)
       const twitUser = {
         oauth_id: `twitter=${response.data.data.id}`,
         email: '',
@@ -341,7 +334,7 @@ const oauthTwitter = async (req, res) => {
     })
     .catch((err) => {
       console.error(err);
-      res.status(500).send('an error has occurred');
+      res.status(500).send('twitter user data request error');
     })
     try {
       await client.connect();
@@ -356,7 +349,7 @@ const oauthTwitter = async (req, res) => {
     }
     catch (err) {
       console.error(err);
-      res.status(500).send('an error has occurred');
+      res.status(500).send('twitter route database error');
     }
     finally {
       client.close()

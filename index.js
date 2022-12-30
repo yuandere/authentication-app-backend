@@ -18,7 +18,7 @@ app.post('/login', router.login);
 app.post('/edit-profile', router.editProfile);
 
 app.get('/oauth/github', router.oauthGithub);
-app.post('/oauth/google', router.oauthGoogle);
+app.get('/oauth/google', router.oauthGoogle);
 app.get('/oauth/facebook', router.oauthFacebook);
 app.get('/oauth/twitter', router.oauthTwitter);
 
