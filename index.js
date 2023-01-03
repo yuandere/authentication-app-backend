@@ -16,6 +16,7 @@ app.use(cors());
 app.post('/register', router.register);
 app.post('/login', router.login);
 app.post('/edit-profile', router.editProfile);
+app.post('/delete-account', router.deleteAccount);
 
 app.get('/oauth/github', router.oauthGithub);
 app.get('/oauth/google', router.oauthGoogle);

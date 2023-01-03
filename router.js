@@ -42,6 +42,31 @@ const googleOauth2Client = new google.auth.OAuth2(
 );
 google.options({ auth: googleOauth2Client });
 
+const dbOauth = async (res, userObject) => {
+  try {
+    await client.connect();
+    const findResult = await users.find({ oauth_id: userObject.oauth_id }).toArray();
+    if (!findResult[0]) {
+      const newUser = {
+        ...userObject,
+        new_user: true
+      }
+      await users.insertOne(newUser);
+      res.json(newUser);
+    }
+    else {
+      res.json(findResult[0]);
+    }
+  }
+  catch (err) {
+    console.error(err);
+    res.status(500).send('database error!');
+  }
+  finally {
+    client.close()
+  }
+}
+
 const register = async (req, res) => {
   const { email, password } = req.body;
   await client.connect();
@@ -77,6 +102,8 @@ const login = async (req, res) => {
         email: findResult[0].email,
         password: findResult[0].password,
         picture_url: findResult[0].picture_url,
+        new_user: false,
+        oauth_login: false,
       }
       res.json(userResults);
     } else {
@@ -99,7 +126,7 @@ const editProfile = async (req, res) => {
     if (oauth_id) {
       const userResults = await users.findOneAndUpdate(
         { oauth_id: oauth_id },
-        { $set: { name: name, bio: bio, phone: phone, email: email, password: password, picture_url: picture_url } },
+        { $set: { name: name, bio: bio, phone: phone, email: email, password: password, picture_url: picture_url, new_user: false } },
         { returnDocument: 'after', upsert: true }
       );
       res.json(userResults);
@@ -107,11 +134,30 @@ const editProfile = async (req, res) => {
     else {
       const userResults = await users.findOneAndUpdate(
         { email: curr_email },
-        { $set: { name: name, bio: bio, phone: phone, email: email, password: password, picture_url: picture_url } },
+        { $set: { name: name, bio: bio, phone: phone, email: email, password: password, picture_url: picture_url, new_user: false } },
         { returnDocument: 'after', upsert: true }
       );
       res.json(userResults);
     }
+  }
+  catch (err) {
+    console.error(err);
+    res.status(500).send('an error has occurred');
+  }
+  finally {
+    client.close()
+  }
+}
+
+const deleteAccount = async (req, res) => {
+  const { email, oauth_id } = req.body;
+  const search = {
+    ...(oauth_id ? { oauth_id: oauth_id } : { email: email })
+  }
+  await client.connect();
+  try {
+    await users.deleteOne(search);
+    res.status(200).send('account deleted');
   }
   catch (err) {
     console.error(err);
@@ -159,6 +205,7 @@ const oauthGithub = async (req, res) => {
         bio: response.data.bio,
         name: response.data.name,
         picture_url: response.data.avatar_url,
+        oauth_login: true,
       }
       return ghubUser
     })
@@ -166,25 +213,7 @@ const oauthGithub = async (req, res) => {
       console.error(err);
       res.status(500).send('github user info request error');
     })
-  // console.log('github user data:', githubUser);
-  try {
-    await client.connect();
-    const findResult = await users.find({ oauth_id: githubUser.oauth_id }).toArray();
-    if (!findResult[0]) {
-      await users.insertOne(githubUser);
-      res.json(githubUser);
-    }
-    else {
-      res.json(findResult[0]);
-    }
-  }
-  catch (err) {
-    console.error(err);
-    res.status(500).send('github route database error');
-  }
-  finally {
-    client.close()
-  }
+  dbOauth(res, githubUser);
 }
 
 const oauthGoogle = async (req, res) => {
@@ -204,29 +233,13 @@ const oauthGoogle = async (req, res) => {
     ...(userDataRaw.data.biographies ? { bio: userDataRaw.data.biographies[0].value } : { bio: '' }),
     ...(userDataRaw.data.names ? { name: userDataRaw.data.names[0].displayName } : { name: '' }),
     ...(userDataRaw.data.photos ? { picture_url: userDataRaw.data.photos[0].url } : { picture_url: '' }),
+    oauth_login: true,
   }
   // const reponseObj = {
   //   tokens: tokens,
   //   userData: googleUser
   // };
-  try {
-    await client.connect();
-    const findResult = await users.find({ oauth_id: googleUser.oauth_id }).toArray();
-    if (!findResult[0]) {
-      await users.insertOne(googleUser);
-      res.json(googleUser);
-    }
-    else {
-      res.json(findResult[0]);
-    }
-  }
-  catch (err) {
-    console.error(err)
-    res.status(400).send('google route database error')
-  }
-  finally {
-    client.close()
-  }
+  dbOauth(res, googleUser);
 }
 
 const oauthFacebook = async (req, res) => {
@@ -261,6 +274,7 @@ const oauthFacebook = async (req, res) => {
         bio: '',
         ...(response.data.name ? { name: response.data.name } : { name: '' }),
         ...(response.data.picture ? { picture_url: response.data.picture.data.url } : { picture_url: '' }),
+        oauth_login: true,
       }
       return fbUser
     })
@@ -269,24 +283,7 @@ const oauthFacebook = async (req, res) => {
       res.status(500).send('fb user info request error');
     })
   // console.log('facebook user:', facebookUser)
-  try {
-    await client.connect();
-    const findResult = await users.find({ oauth_id: facebookUser.oauth_id }).toArray();
-    if (!findResult[0]) {
-      await users.insertOne(facebookUser);
-      res.json(facebookUser);
-    }
-    else {
-      res.json(findResult[0]);
-    }
-  }
-  catch (err) {
-    console.error(err);
-    res.status(500).send('fb route database error');
-  }
-  finally {
-    client.close()
-  }
+  dbOauth(res, facebookUser);
 }
 
 const oauthTwitter = async (req, res) => {
@@ -329,6 +326,7 @@ const oauthTwitter = async (req, res) => {
         bio: response.data.data.description,
         name: response.data.data.name,
         picture_url: response.data.data.profile_image_url,
+        oauth_login: true,
       }
       return twitUser
     })
@@ -336,30 +334,14 @@ const oauthTwitter = async (req, res) => {
       console.error(err);
       res.status(500).send('twitter user data request error');
     })
-    try {
-      await client.connect();
-      const findResult = await users.find({ oauth_id: twitterUser.oauth_id }).toArray();
-      if (!findResult[0]) {
-        await users.insertOne(twitterUser);
-        res.json(twitterUser);
-      }
-      else {
-        res.json(findResult[0]);
-      }
-    }
-    catch (err) {
-      console.error(err);
-      res.status(500).send('twitter route database error');
-    }
-    finally {
-      client.close()
-    }
+  dbOauth(res, twitterUser)
 }
 
 module.exports = {
   register,
   login,
   editProfile,
+  deleteAccount,
   oauthGithub,
   oauthGoogle,
   oauthFacebook,
