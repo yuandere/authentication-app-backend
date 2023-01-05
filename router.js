@@ -5,14 +5,15 @@ const qs = require('qs')
 const { google } = require('googleapis')
 const people = google.people('v1')
 const { MongoClient } = require('mongodb')
+const bcrypt = require('bcrypt')
 
 const db_url = 'mongodb://localhost:27017';
 const client = new MongoClient(db_url);
 const dbName = 'authyDB';
 const db = client.db(dbName);
 const users = db.collection('users');
-const REDIRECT_URI = 'http://localhost:5173';
 
+const REDIRECT_URI = 'http://localhost:5173';
 const REDIRECT_URL_NGROK = 'https://3206-104-59-98-29.ngrok.io';
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
@@ -34,7 +35,6 @@ if (!fs.existsSync(serviceKey)) {
   };
   fs.writeFileSync(serviceKey, JSON.stringify(serviceKeyJoined));
 }
-
 const googleOauth2Client = new google.auth.OAuth2(
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
@@ -68,7 +68,8 @@ const dbOauth = async (res, userObject) => {
 }
 
 const register = async (req, res) => {
-  const { email, password } = req.body;
+  const email = req.body.email;
+  const password = await bcrypt.hash(req.body.password, 12);
   await client.connect();
   try {
     const findResult = await users.find({ email: email }).toArray();
@@ -93,7 +94,7 @@ const login = async (req, res) => {
   const { email, password } = req.body;
   await client.connect();
   try {
-    const findResult = await users.find({ email: email, password: password }).toArray();
+    const findResult = await users.find({ email: email }).toArray();
     if (findResult[0]) {
       const userResults = {
         name: findResult[0].name,
@@ -105,9 +106,16 @@ const login = async (req, res) => {
         new_user: false,
         oauth_login: false,
       }
-      res.json(userResults);
+      const match = await bcrypt.compare(password, userResults.password);
+      if (match) {
+        userResults.password = '*'.repeat(password.length);
+        res.json(userResults);
+      }
+      else {
+        res.status(401).send('That email/password combination was not found!')
+      }
     } else {
-      res.status(401).send('incorrect email/password combination')
+      res.status(401).send('That email/password combination was not found!')
     }
   }
   catch (err) {
@@ -120,24 +128,27 @@ const login = async (req, res) => {
 }
 
 const editProfile = async (req, res) => {
-  const { oauth_id, curr_email, name, bio, phone, email, password, picture_url } = req.body;
+  const { oauth_id, curr_email, name, bio, phone, email, picture_url } = req.body;
+  const password = await bcrypt.hash(req.body.password, 12);
   await client.connect();
   try {
     if (oauth_id) {
       const userResults = await users.findOneAndUpdate(
         { oauth_id: oauth_id },
         { $set: { name: name, bio: bio, phone: phone, email: email, password: password, picture_url: picture_url, new_user: false } },
-        { returnDocument: 'after', upsert: true }
+        { returnDocument: 'after' }
       );
-      res.json(userResults);
+      userResults.value.password = '*'.repeat(req.body.password.length);
+      res.json(userResults.value);
     }
     else {
       const userResults = await users.findOneAndUpdate(
         { email: curr_email },
         { $set: { name: name, bio: bio, phone: phone, email: email, password: password, picture_url: picture_url, new_user: false } },
-        { returnDocument: 'after', upsert: true }
+        { returnDocument: 'after' }
       );
-      res.json(userResults);
+      userResults.value.password = '*'.repeat(req.body.password.length);
+      res.json(userResults.value);
     }
   }
   catch (err) {

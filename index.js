@@ -2,6 +2,8 @@ require('dotenv').config()
 const logger = require('morgan')
 const express = require('express')
 const cors = require('cors')
+const bodyParser = require('body-parser')
+const mongoSanitize = require('express-mongo-sanitize')
 const app = express()
 const router = require('./router')
 
@@ -12,6 +14,13 @@ app.set('env', NODE_ENV);
 app.use(logger('tiny'));
 app.use(express.json());
 app.use(cors());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(
+  mongoSanitize({
+    allowDots: true,
+    replaceWith: '_'
+  }));
 
 app.post('/register', router.register);
 app.post('/login', router.login);
