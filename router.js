@@ -4,17 +4,20 @@ const axios = require('axios')
 const qs = require('qs')
 const { google } = require('googleapis')
 const people = google.people('v1')
-const { MongoClient } = require('mongodb')
+const { MongoClient, ServerApiVersion } = require('mongodb')
 const bcrypt = require('bcrypt')
 
-const db_url = 'mongodb://localhost:27017';
-const client = new MongoClient(db_url);
+// const db_uri = 'mongodb://localhost:27017';
+// const client = new MongoClient(db_uri);
+const db_uri = 'mongodb+srv://authyapp:<password>@cluster0.oeadnfp.mongodb.net/?retryWrites=true&w=majority';
+const client = new MongoClient(db_uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
 const dbName = 'authyDB';
 const db = client.db(dbName);
 const users = db.collection('users');
 
-const REDIRECT_URI = 'http://localhost:5173';
-const REDIRECT_URL_NGROK = 'https://3206-104-59-98-29.ngrok.io';
+const REDIRECT_URI = 'https://lucent-mermaid-ff4214.netlify.app/';
+// const REDIRECT_URL_NGROK = 'https://3206-104-59-98-29.ngrok.io';
+const REDIRECT_URL_NGROK = 'https://lucent-mermaid-ff4214.netlify.app/';
 
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
@@ -255,7 +258,8 @@ const oauthGoogle = async (req, res) => {
 
 const oauthFacebook = async (req, res) => {
   const access_token = await axios.get
-    (`https://graph.facebook.com/v15.0/oauth/access_token?client_id=${FACEBOOK_CLIENT_ID}&redirect_uri=${REDIRECT_URI + '/'}&client_secret=${FACEBOOK_CLIENT_SECRET}&code=${req.query.code}`)
+  // `https://graph.facebook.com/v15.0/oauth/access_token?client_id=${FACEBOOK_CLIENT_ID}&redirect_uri=${REDIRECT_URI + '/'}&client_secret=${FACEBOOK_CLIENT_SECRET}&code=${req.query.code}`
+    (`https://graph.facebook.com/v15.0/oauth/access_token?client_id=${FACEBOOK_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&client_secret=${FACEBOOK_CLIENT_SECRET}&code=${req.query.code}`)
     .then((response) => {
       return response.data.access_token
     })
