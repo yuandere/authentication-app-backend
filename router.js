@@ -9,7 +9,7 @@ const bcrypt = require('bcrypt')
 
 // const db_uri = 'mongodb://localhost:27017';
 // const client = new MongoClient(db_uri);
-const db_uri = 'mongodb+srv://authyapp:<password>@cluster0.oeadnfp.mongodb.net/?retryWrites=true&w=majority';
+const db_uri = `mongodb+srv://authyapp:${process.env.MONGO_PASSWORD}@cluster0.oeadnfp.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(db_uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
 const dbName = 'authyDB';
 const db = client.db(dbName);
