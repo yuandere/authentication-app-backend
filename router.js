@@ -6,6 +6,7 @@ const { google } = require('googleapis')
 const people = google.people('v1')
 const { MongoClient, ServerApiVersion } = require('mongodb')
 const bcrypt = require('bcrypt')
+const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, FACEBOOK_CLIENT_ID, FACEBOOK_CLIENT_SECRET, TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET, REDIRECT_URI } = require('constants')
 
 // const db_uri = 'mongodb://localhost:27017';
 // const client = new MongoClient(db_uri);
@@ -14,19 +15,6 @@ const client = new MongoClient(db_uri, { useNewUrlParser: true, useUnifiedTopolo
 const dbName = 'authyDB';
 const db = client.db(dbName);
 const users = db.collection('users');
-
-const REDIRECT_URI = 'https://lucent-mermaid-ff4214.netlify.app/';
-// const REDIRECT_URL_NGROK = 'https://3206-104-59-98-29.ngrok.io';
-const REDIRECT_URL_NGROK = 'https://lucent-mermaid-ff4214.netlify.app/';
-
-const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
-const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const FACEBOOK_CLIENT_ID = process.env.FACEBOOK_CLIENT_ID;
-const FACEBOOK_CLIENT_SECRET = process.env.FACEBOOK_CLIENT_SECRET;
-const TWITTER_CLIENT_ID = process.env.TWITTER_CLIENT_ID;
-const TWITTER_CLIENT_SECRET = process.env.TWITTER_CLIENT_SECRET;
 
 const serviceKey = path.join(__dirname, './config/keys.json');
 if (!fs.existsSync(serviceKey)) {
@@ -258,7 +246,7 @@ const oauthGoogle = async (req, res) => {
 
 const oauthFacebook = async (req, res) => {
   const access_token = await axios.get
-  // `https://graph.facebook.com/v15.0/oauth/access_token?client_id=${FACEBOOK_CLIENT_ID}&redirect_uri=${REDIRECT_URI + '/'}&client_secret=${FACEBOOK_CLIENT_SECRET}&code=${req.query.code}`
+    // redirect uri for fb needs / at the end
     (`https://graph.facebook.com/v15.0/oauth/access_token?client_id=${FACEBOOK_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&client_secret=${FACEBOOK_CLIENT_SECRET}&code=${req.query.code}`)
     .then((response) => {
       return response.data.access_token
@@ -313,7 +301,7 @@ const oauthTwitter = async (req, res) => {
     data: qs.stringify({
       code: req.query.code,
       grant_type: 'authorization_code',
-      redirect_uri: REDIRECT_URL_NGROK,
+      redirect_uri: REDIRECT_URI,
       code_verifier: req.query.verifier
     })
   })
