@@ -6,7 +6,7 @@ const { google } = require('googleapis')
 const people = google.people('v1')
 const { MongoClient, ServerApiVersion } = require('mongodb')
 const bcrypt = require('bcrypt')
-const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, FACEBOOK_CLIENT_ID, FACEBOOK_CLIENT_SECRET, TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET, REDIRECT_URI } = require('constants')
+const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, FACEBOOK_CLIENT_ID, FACEBOOK_CLIENT_SECRET, TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET, REDIRECT_URI } = require('./constants')
 
 // const db_uri = 'mongodb://localhost:27017';
 // const client = new MongoClient(db_uri);
