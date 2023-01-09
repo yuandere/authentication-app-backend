@@ -51,7 +51,6 @@ const dbOauth = async (res, userObject) => {
   }
   catch (err) {
     console.error(err);
-    res.status(500).send('database error!');
   }
   finally {
     client.close()
@@ -120,13 +119,15 @@ const login = async (req, res) => {
 
 const editProfile = async (req, res) => {
   const { oauth_id, curr_email, name, bio, phone, email, picture_url } = req.body;
-  const password = await bcrypt.hash(req.body.password, 12);
+  if (!oauth_id) {
+    const password = await bcrypt.hash(req.body.password, 12);
+  }
   await client.connect();
   try {
     if (oauth_id) {
       const userResults = await users.findOneAndUpdate(
         { oauth_id: oauth_id },
-        { $set: { name: name, bio: bio, phone: phone, email: email, password: password, picture_url: picture_url, new_user: false } },
+        { $set: { name: name, bio: bio, phone: phone, email: email, password: '', picture_url: picture_url, new_user: false } },
         { returnDocument: 'after' }
       );
       userResults.value.password = '*'.repeat(req.body.password.length);
@@ -171,173 +172,183 @@ const deleteAccount = async (req, res) => {
 }
 
 const oauthGithub = async (req, res) => {
-  const access_token = await axios.post(`https://github.com/login/oauth/access_token?client_id=${GITHUB_CLIENT_ID}&client_secret=${GITHUB_CLIENT_SECRET}&code=${req.query.code}`,
-    {
+  try {
+    const access_token = await axios.post(`https://github.com/login/oauth/access_token?client_id=${GITHUB_CLIENT_ID}&client_secret=${GITHUB_CLIENT_SECRET}&code=${req.query.code}`,
+      {
+        headers: {
+          Accept: 'application/json'
+        }
+      }
+    )
+      .then((response) => {
+        if (typeof response.data != 'string') {
+          throw `i realized axios' alias method doesn't set request headers properly but this works fine too`
+        }
+        const token = response.data.slice(
+          response.data.indexOf('=') + 1, response.data.indexOf('&')
+        )
+        return token
+      })
+      .catch((err) => {
+        console.error(err);
+      })
+    // console.log('token ready:', access_token);
+    const githubUser = await axios.get('https://api.github.com/user', {
       headers: {
-        Accept: 'application/json'
+        Authorization: `Bearer ${access_token}`,
       }
-    }
-  )
-    .then((response) => {
-      if (typeof response.data != 'string') {
-        throw `i realized axios' alias method doesn't set request headers properly but this works fine too`
-      }
-      const token = response.data.slice(
-        response.data.indexOf('=') + 1, response.data.indexOf('&')
-      )
-      return token
     })
-    .catch((err) => {
-      console.error(err);
-      res.status(500).send('github token request error');
-    })
-  // console.log('token ready:', access_token);
-  const githubUser = await axios.get('https://api.github.com/user', {
-    headers: {
-      Authorization: `Bearer ${access_token}`,
-    }
-  })
-    .then((response) => {
-      // console.log(response.data)
-      const ghubUser = {
-        oauth_id: `github=${response.data.id}`,
-        email: '',
-        password: '',
-        phone: '',
-        bio: response.data.bio,
-        name: response.data.name,
-        picture_url: response.data.avatar_url,
-        oauth_login: true,
-      }
-      return ghubUser
-    })
-    .catch((err) => {
-      console.error(err);
-      res.status(500).send('github user info request error');
-    })
-  dbOauth(res, githubUser);
+      .then((response) => {
+        // console.log(response.data)
+        const ghubUser = {
+          oauth_id: `github=${response.data.id}`,
+          email: '',
+          password: '',
+          phone: '',
+          bio: response.data.bio,
+          name: response.data.name,
+          picture_url: response.data.avatar_url,
+          oauth_login: true,
+        }
+        return ghubUser
+      })
+      .catch((err) => {
+        console.error(err);
+      })
+    dbOauth(res, githubUser);
+  }
+  catch (err) {
+
+  }
+
 }
 
 const oauthGoogle = async (req, res) => {
-  const code = req.query.code;
-  let { tokens } = await googleOauth2Client.getToken(code);
-  googleOauth2Client.setCredentials(tokens);
-  const userDataRaw = await people.people.get({
-    resourceName: 'people/me',
-    personFields: 'names,biographies,photos',
-  });
-  const googleId = userDataRaw.data.resourceName;
-  const googleUser = {
-    oauth_id: `google=${googleId.slice(googleId.indexOf('/') + 1)}`,
-    email: '',
-    password: '',
-    phone: '',
-    ...(userDataRaw.data.biographies ? { bio: userDataRaw.data.biographies[0].value } : { bio: '' }),
-    ...(userDataRaw.data.names ? { name: userDataRaw.data.names[0].displayName } : { name: '' }),
-    ...(userDataRaw.data.photos ? { picture_url: userDataRaw.data.photos[0].url } : { picture_url: '' }),
-    oauth_login: true,
+  try {
+    const code = req.query.code;
+    let { tokens } = await googleOauth2Client.getToken(code);
+    googleOauth2Client.setCredentials(tokens);
+    const userDataRaw = await people.people.get({
+      resourceName: 'people/me',
+      personFields: 'names,biographies,photos',
+    });
+    const googleId = userDataRaw.data.resourceName;
+    const googleUser = {
+      oauth_id: `google=${googleId.slice(googleId.indexOf('/') + 1)}`,
+      email: '',
+      password: '',
+      phone: '',
+      ...(userDataRaw.data.biographies ? { bio: userDataRaw.data.biographies[0].value } : { bio: '' }),
+      ...(userDataRaw.data.names ? { name: userDataRaw.data.names[0].displayName } : { name: '' }),
+      ...(userDataRaw.data.photos ? { picture_url: userDataRaw.data.photos[0].url } : { picture_url: '' }),
+      oauth_login: true,
+    }
+    dbOauth(res, googleUser);
   }
-  // const reponseObj = {
-  //   tokens: tokens,
-  //   userData: googleUser
-  // };
-  dbOauth(res, googleUser);
+  catch (err) {
+    res.status(500).send('google oauth route error');
+  }
 }
 
 const oauthFacebook = async (req, res) => {
-  const access_token = await axios.get
-    // redirect uri for fb needs / at the end
-    (`https://graph.facebook.com/v15.0/oauth/access_token?client_id=${FACEBOOK_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&client_secret=${FACEBOOK_CLIENT_SECRET}&code=${req.query.code}`)
-    .then((response) => {
-      return response.data.access_token
-    })
-    .catch((err) => {
-      console.error(err);
-      res.status(500).send('fb token request error');
-    })
-  // console.log('token ready:', access_token);
-  const facebookId = await axios.get
-    (`http://graph.facebook.com/debug_token?input_token=${access_token}&access_token=${FACEBOOK_CLIENT_ID}|${FACEBOOK_CLIENT_SECRET}`)
-    .then((response) => {
-      return response.data.data.user_id
-    })
-    .catch((err) => {
-      console.error(err);
-      res.status(500).send('fb user id request error');
-    })
-  // console.log('fb ID found:', facebookId);
-  const facebookUser = await axios.get
-    (`http://graph.facebook.com/v15.0/${facebookId}?fields=name,picture&access_token=${access_token}`)
-    .then((response) => {
-      const fbUser = {
-        oauth_id: `facebook=${facebookId}`,
-        email: '',
-        password: '',
-        phone: '',
-        bio: '',
-        ...(response.data.name ? { name: response.data.name } : { name: '' }),
-        ...(response.data.picture ? { picture_url: response.data.picture.data.url } : { picture_url: '' }),
-        oauth_login: true,
-      }
-      return fbUser
-    })
-    .catch((err) => {
-      console.error(err);
-      res.status(500).send('fb user info request error');
-    })
-  // console.log('facebook user:', facebookUser)
-  dbOauth(res, facebookUser);
+  try {
+    const access_token = await axios.get
+      // redirect uri for fb needs / at the end
+      (`https://graph.facebook.com/v15.0/oauth/access_token?client_id=${FACEBOOK_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&client_secret=${FACEBOOK_CLIENT_SECRET}&code=${req.query.code}`)
+      .then((response) => {
+        return response.data.access_token
+      })
+      .catch((err) => {
+        console.error(err);
+      })
+    // console.log('token ready:', access_token);
+    const facebookId = await axios.get
+      (`http://graph.facebook.com/debug_token?input_token=${access_token}&access_token=${FACEBOOK_CLIENT_ID}|${FACEBOOK_CLIENT_SECRET}`)
+      .then((response) => {
+        return response.data.data.user_id
+      })
+      .catch((err) => {
+        console.error(err);
+      })
+    // console.log('fb ID found:', facebookId);
+    const facebookUser = await axios.get
+      (`http://graph.facebook.com/v15.0/${facebookId}?fields=name,picture&access_token=${access_token}`)
+      .then((response) => {
+        const fbUser = {
+          oauth_id: `facebook=${facebookId}`,
+          email: '',
+          password: '',
+          phone: '',
+          bio: '',
+          ...(response.data.name ? { name: response.data.name } : { name: '' }),
+          ...(response.data.picture ? { picture_url: response.data.picture.data.url } : { picture_url: '' }),
+          oauth_login: true,
+        }
+        return fbUser
+      })
+      .catch((err) => {
+        console.error(err);
+      })
+    // console.log('facebook user:', facebookUser)
+    dbOauth(res, facebookUser);
+  }
+  catch (err) {
+    res.status(500).send('facebook oauth route error')
+  }
 }
 
 const oauthTwitter = async (req, res) => {
-  const authorization_enc = Buffer.from(`${TWITTER_CLIENT_ID}:${TWITTER_CLIENT_SECRET}`, 'utf8').toString('base64');
-  const access_token = await axios({
-    method: 'post',
-    url: `https://api.twitter.com/2/oauth2/token`,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${authorization_enc}`
-    },
-    data: qs.stringify({
-      code: req.query.code,
-      grant_type: 'authorization_code',
-      redirect_uri: REDIRECT_URI,
-      code_verifier: req.query.verifier
+  try {
+    const authorization_enc = Buffer.from(`${TWITTER_CLIENT_ID}:${TWITTER_CLIENT_SECRET}`, 'utf8').toString('base64');
+    const access_token = await axios({
+      method: 'post',
+      url: `https://api.twitter.com/2/oauth2/token`,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${authorization_enc}`
+      },
+      data: qs.stringify({
+        code: req.query.code,
+        grant_type: 'authorization_code',
+        redirect_uri: REDIRECT_URI,
+        code_verifier: req.query.verifier
+      })
     })
-  })
-    .then((response) => {
-      return response.data.access_token
-    })
-    .catch((err) => {
-      console.error(err);
-      res.status(500).send('twitter token request error');
-    })
-  // console.log('token ready:', access_token);
-  const twitterUser = await axios({
-    method: 'get',
-    url: `https://api.twitter.com/2/users/me?user.fields=profile_image_url%2Cdescription`,
-    headers: {
-      Authorization: `Bearer ${access_token}`,
-    }
-  })
-    .then((response) => {
-      const twitUser = {
-        oauth_id: `twitter=${response.data.data.id}`,
-        email: '',
-        password: '',
-        phone: '',
-        bio: response.data.data.description,
-        name: response.data.data.name,
-        picture_url: response.data.data.profile_image_url,
-        oauth_login: true,
+      .then((response) => {
+        return response.data.access_token
+      })
+      .catch((err) => {
+        console.error(err);
+      })
+    // console.log('token ready:', access_token);
+    const twitterUser = await axios({
+      method: 'get',
+      url: `https://api.twitter.com/2/users/me?user.fields=profile_image_url%2Cdescription`,
+      headers: {
+        Authorization: `Bearer ${access_token}`,
       }
-      return twitUser
     })
-    .catch((err) => {
-      console.error(err);
-      res.status(500).send('twitter user data request error');
-    })
-  dbOauth(res, twitterUser)
+      .then((response) => {
+        const twitUser = {
+          oauth_id: `twitter=${response.data.data.id}`,
+          email: '',
+          password: '',
+          phone: '',
+          bio: response.data.data.description,
+          name: response.data.data.name,
+          picture_url: response.data.data.profile_image_url,
+          oauth_login: true,
+        }
+        return twitUser
+      })
+      .catch((err) => {
+        console.error(err);
+      })
+    dbOauth(res, twitterUser)
+  }
+  catch (err) {
+    res.status(500).send('twitter oauth route error')
+  }
 }
 
 module.exports = {
