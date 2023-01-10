@@ -119,8 +119,9 @@ const login = async (req, res) => {
 
 const editProfile = async (req, res) => {
   const { oauth_id, curr_email, name, bio, phone, email, picture_url } = req.body;
+  let password = '';
   if (!oauth_id) {
-    const password = await bcrypt.hash(req.body.password, 12);
+    password = await bcrypt.hash(req.body.password, 12);
   }
   await client.connect();
   try {
